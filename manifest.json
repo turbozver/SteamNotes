@@ -1,0 +1,59 @@
+{
+    "name": "Steam Notes",
+    "description": "Local notes for Steam, Tracklock, Statlocker, Faceit, and Twitch profiles.",
+    "version": "1.0",
+    "manifest_version": 3,
+    "permissions": ["tabs", "storage", "webNavigation"],
+    "icons": {
+        "16": "icons/icon16.png",
+        "32": "icons/icon32.png",
+        "48": "icons/icon48.png",
+        "128": "icons/icon128.png"
+    },
+    "action": {
+        "default_icon": {
+            "16": "icons/icon16.png",
+            "32": "icons/icon32.png",
+            "48": "icons/icon48.png"
+        },
+        "default_popup": "popup.html"
+    },
+    "background": {
+        "service_worker": "background.js"
+    },
+    "content_scripts": [
+        {
+            "run_at": "document_start",
+            "matches": [
+                "https://statlocker.gg/*",
+                "https://tracklock.gg/players/*",
+                "https://steamcommunity.com/id/*",
+                "https://steamcommunity.com/profiles/*",
+                "https://www.twitch.tv/*"
+            ],
+            "js": ["steamnotes.js"],
+            "css": ["steamnotes.css"]
+        },
+        {
+            "run_at": "document_start",
+            "matches": ["https://statlocker.gg/*"],
+            "js": ["statlocker.js"]
+        }
+    ],
+    "host_permissions": [
+        "https://statlocker.gg/*",
+        "https://tracklock.gg/*",
+        "https://steamcommunity.com/*",
+        "https://www.twitch.tv/*"
+    ],
+    "web_accessible_resources": [
+        {
+            "resources": ["icons/i/*"],
+            "matches": [
+                "https://steamcommunity.com/*",
+                "https://statlocker.gg/*",
+                "https://www.twitch.tv/*"
+            ]
+        }
+    ]
+}

@@ -1,0 +1,270 @@
+#turbo-notes-panel {
+    position: fixed;
+    top: 125px;
+    right: 14px;
+    width: 236px;
+    padding: 0;
+    border-radius: 0;
+    color: #f2f3f5;
+    background: transparent;
+    box-shadow: none;
+    box-sizing: border-box !important;
+    font: 12px/1.35 Arial, sans-serif;
+    opacity: 0.98;
+    z-index: 999999;
+    transition: transform 0.25s ease, opacity 0.25s ease;
+}
+
+#turbo-notes-panel *,
+#turbo-notes-twitch-container * {
+    box-sizing: border-box !important;
+}
+
+.turbo-notes-editor-block,
+.turbo-notes-links-card {
+    position: relative;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    background: rgba(18, 20, 27, 0.96);
+    box-shadow: 0 16px 38px rgba(0, 0, 0, 0.35);
+    backdrop-filter: blur(8px);
+}
+
+.turbo-notes-editor-block {
+    display: grid;
+    gap: 9px;
+    padding: 11px;
+}
+
+.turbo-notes-links-card {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    margin-top: 8px;
+    padding: 9px 10px;
+}
+
+.turbo-notes-twitch-panel .turbo-notes-links-card {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    justify-content: flex-end;
+    margin: 0;
+    opacity: 0.96;
+    pointer-events: all;
+}
+
+#turbo-notes-close,
+.turbo-notes-twitch-close {
+    appearance: none;
+    display: inline-grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    margin: 0;
+    padding: 0;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    color: #aeb4bf;
+    background: rgba(255, 255, 255, 0.05);
+    cursor: pointer;
+    font: 700 12px/1 Arial, sans-serif;
+}
+
+.turbo-notes-twitch-close {
+    border: none;
+    background: none;
+}
+
+#turbo-notes-close:hover,
+.turbo-notes-twitch-close:hover {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.turbo-notes-label {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+    color: #aeb4bf;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0;
+}
+
+.turbo-notes-label-nickname {
+    grid-template-columns: minmax(0, 1fr) 26px;
+}
+
+.turbo-notes-label-nickname .turbo-notes-span {
+    grid-column: 1;
+}
+
+.turbo-notes-label-nickname #turbo-notes-nickname {
+    grid-column: 1;
+}
+
+.turbo-notes-label-nickname #turbo-notes-close {
+    grid-row: 1 / 3;
+    grid-column: 2;
+}
+
+.turbo-notes-span {
+    color: inherit;
+}
+
+#turbo-notes-nickname,
+#turbo-notes-twitch,
+#turbo-notes-faceit,
+#turbo-notes-info {
+    width: 100%;
+    min-width: 0;
+    margin: 0;
+    padding: 7px 8px;
+    border: 1px solid rgba(255, 255, 255, 0.11);
+    border-radius: 8px;
+    outline: none;
+    color: #f4f5f7;
+    background: rgba(8, 10, 14, 0.72);
+    font: 12px/1.35 Arial, sans-serif;
+}
+
+#turbo-notes-nickname:focus,
+#turbo-notes-twitch:focus,
+#turbo-notes-faceit:focus,
+#turbo-notes-info:focus {
+    border-color: rgba(139, 92, 246, 0.8);
+    box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.18);
+}
+
+#turbo-notes-info {
+    height: 72px;
+    resize: vertical;
+}
+
+.turbo-notes-flags {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 7px;
+    margin-top: 1px;
+}
+
+.turbo-notes-flag {
+    position: relative;
+    display: grid;
+    place-items: center;
+    min-height: 30px;
+    padding: 0;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    color: #aeb4bf;
+    background: rgba(255, 255, 255, 0.04);
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.turbo-notes-flag input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.turbo-notes-flag span {
+    color: inherit;
+}
+
+.turbo-notes-flag.is-checked {
+    color: #fff;
+}
+
+.turbo-notes-label-cheater.is-checked {
+    border-color: rgba(239, 68, 68, 0.58);
+    background: rgba(127, 29, 29, 0.55);
+}
+
+.turbo-notes-label-suspect.is-checked {
+    border-color: rgba(209, 144, 66, 0.64);
+    background: rgba(94, 58, 18, 0.62);
+}
+
+#turbo-notes-twitch-container {
+    position: fixed;
+    top: 100px;
+    right: 5px;
+    display: grid;
+    gap: 8px;
+    pointer-events: none;
+    z-index: 9999;
+}
+
+.turbo-notes-twitch-panel {
+    position: relative;
+    min-width: 136px;
+    padding: 5px 7px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    background: rgba(18, 20, 27, 0.86);
+    box-shadow: 0 16px 38px rgba(0, 0, 0, 0.35);
+    pointer-events: all;
+    transition: transform 0.25s ease, opacity 0.25s ease;
+}
+
+.turbo-notes-twitch-panel .turbo-notes-twitch-close {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+}
+
+.turbo-notes-removed {
+    transform-origin: top right;
+    opacity: 0;
+    transform: scale(0.92);
+}
+
+.turbo-notes-links-card a {
+    display: inline-grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.06);
+    transition: background 0.15s ease, transform 0.15s ease;
+}
+
+.turbo-notes-links-card a:hover {
+    background: rgba(255, 255, 255, 0.12);
+    transform: translateY(-1px);
+}
+
+.turbo-notes-links-card img {
+    max-width: 16px;
+    max-height: 16px;
+}
+
+.turbo-notes-twitch-panel .turbo-notes-links-card {
+    padding: 0;
+    margin-right: 28px;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+    backdrop-filter: none;
+}
+
+.turbo-note-text-icon {
+    display: inline-grid;
+    place-items: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 4px;
+    border-radius: 4px;
+    color: #d9ccff;
+    background: rgba(255, 255, 255, 0.08);
+    font-size: 9px;
+    font-weight: 700;
+    line-height: 1;
+    text-decoration: none;
+}

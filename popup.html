@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Steam Notes</title>
+    <link rel="icon" href="icons/favicon.png">
+    <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+    <header class="app-header">
+        <button id="navButton" class="icon-button" type="button" title="Settings" aria-label="Settings">&#9881;</button>
+        <div class="title-block">
+            <h1>Steam Notes</h1>
+            <p id="status">Enabled</p>
+        </div>
+        <label class="toggle" title="Enable Extension">
+            <input id="enabled" type="checkbox">
+            <span></span>
+        </label>
+    </header>
+
+    <main id="mainView" class="view">
+        <section class="panel">
+            <div class="search-row">
+                <input id="search" type="search" placeholder="Search...">
+            </div>
+            <div class="filters">
+                <label><input id="nickOnly" type="checkbox" checked> Search by nick only</label>
+                <label><input id="cheatersOnly" type="checkbox"> Cheaters only</label>
+                <label><input id="suspectsOnly" type="checkbox"> Suspects only</label>
+            </div>
+            <div id="notesList" class="notes-list"></div>
+        </section>
+    </main>
+
+    <main id="settingsView" class="view hidden">
+        <section class="panel settings-panel">
+            <div class="section-title">
+                <h2>Settings</h2>
+            </div>
+            <div class="settings-stack">
+                <div class="settings-block">
+                    <div class="settings-block-title">
+                        <strong>Service Links</strong>
+                        <span>Choose which static service links are shown.</span>
+                    </div>
+                    <div id="serviceModes" class="service-modes"></div>
+                </div>
+
+                <div class="settings-block">
+                    <div class="settings-block-title">
+                        <strong>About</strong>
+                    </div>
+                    <div class="settings-links">
+                        <a class="link-card" href="https://github.com/turbozver/SteamNotes" target="_blank" rel="noreferrer">
+                            <span class="link-icon github-icon" aria-hidden="true"></span>
+                            <span><strong>GitHub</strong></span>
+                        </a>
+                        <a class="link-card" href="mailto:turbozver24@gmail.com" target="_blank" rel="noreferrer">
+                            <span class="link-icon mail-icon" aria-hidden="true"></span>
+                            <span>
+                                <strong>Contact</strong>
+                                <small>turbozver24@gmail.com</small>
+                            </span>
+                        </a>
+                    </div>
+                </div>
+
+                <div class="settings-block">
+                    <div class="settings-block-title">
+                        <strong>Data</strong>
+                    </div>
+                    <div class="settings-actions">
+                        <button id="importBtn" type="button">Import</button>
+                        <button id="exportBtn" type="button">Export</button>
+                        <button id="resetBtn" class="danger" type="button">Delete All Data</button>
+                        <input id="importFile" type="file" accept="application/json" hidden>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <main id="editView" class="view hidden">
+        <section class="panel">
+            <div class="edit-header">
+                <button id="editBackBtn" class="icon-button back-button" type="button" title="Back" aria-label="Back">&#8617;</button>
+                <h2 id="editTitle">Edit Note</h2>
+            </div>
+            <div class="edit-form">
+                <div class="edit-card">
+                    <label>Nickname<input id="editNickname" type="text"></label>
+                    <label>Info<textarea id="editInfo" rows="3"></textarea></label>
+                </div>
+                <div id="customServiceFields" class="edit-card custom-service-fields"></div>
+                <div class="edit-card flag-card">
+                    <label class="inline-check"><input id="editCheater" type="checkbox"> Cheater</label>
+                    <label class="inline-check"><input id="editSuspect" type="checkbox"> Suspect</label>
+                    <label class="inline-check"><input id="editHideOnTwitch" type="checkbox"> Hide on Twitch</label>
+                </div>
+            </div>
+            <footer class="edit-footer">
+                <span id="createdAt"></span>
+                <button id="deleteNote" class="danger-button" type="button" title="Delete note" aria-label="Delete note">
+                    <svg width="19" height="19" viewBox="0 0 24 24" fill="none">
+                        <path d="M7 21q-.825 0-1.413-.588T5 19V7H4V5h5V4h6v1h5v2h-1v12q0 .825-.588 1.413T17 21H7Zm10-14H7v12h10V7ZM9 17h2V9H9v8Zm4 0h2V9h-2v8Z" fill="currentColor"/>
+                    </svg>
+                </button>
+            </footer>
+        </section>
+    </main>
+
+    <script src="popup.js"></script>
+</body>
+</html>
