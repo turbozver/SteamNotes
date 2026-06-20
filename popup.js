@@ -58,7 +58,10 @@ const STATIC_SERVICES = [
     }
 ];
 
-const DEFAULT_SERVICE_VISIBILITY = Object.fromEntries(STATIC_SERVICES.map((service) => [service.id, true]));
+const DEFAULT_SERVICE_VISIBILITY = Object.fromEntries(STATIC_SERVICES.map((service) => [
+    service.id,
+    { popup: true, profile: true }
+]));
 
 const DEFAULT_SETTINGS = {
     enabled: true,
@@ -95,7 +98,7 @@ const els = {
 };
 
 let notes = {};
-let serviceVisibility = { ...DEFAULT_SERVICE_VISIBILITY };
+let serviceVisibility = createDefaultServiceVisibility();
 let editingId = null;
 let renderRequest = 0;
 
@@ -130,7 +133,7 @@ function init() {
         serviceVisibility = normalizeServiceVisibility(data[SERVICE_VISIBILITY_KEY], data.steamnotesServices);
         els.enabled.checked = "enabled" in data ? !!data.enabled : DEFAULT_SETTINGS.enabled;
 
-        if (!data[SERVICE_VISIBILITY_KEY] && data.steamnotesServices) {
+        if (!hasStructuredServiceVisibility(data[SERVICE_VISIBILITY_KEY])) {
             chrome.storage.local.set({ [SERVICE_VISIBILITY_KEY]: serviceVisibility });
         }
 
@@ -375,10 +378,10 @@ function importData() {
 function resetData() {
     if (!confirm("Delete all Steam Notes data and settings?")) return;
 
-    serviceVisibility = { ...DEFAULT_SERVICE_VISIBILITY };
+    serviceVisibility = createDefaultServiceVisibility();
     chrome.storage.local.set({
         enabled: DEFAULT_SETTINGS.enabled,
-        [SERVICE_VISIBILITY_KEY]: { ...DEFAULT_SERVICE_VISIBILITY },
+        [SERVICE_VISIBILITY_KEY]: createDefaultServiceVisibility(),
         steamNotes: "{}"
     }, () => {
         notes = {};
@@ -432,11 +435,10 @@ function renderServiceSettings() {
     els.serviceModes.textContent = "";
 
     STATIC_SERVICES.forEach((service) => {
-        const row = document.createElement("label");
+        const row = document.createElement("div");
         row.className = "service-mode-row";
-        const checked = serviceVisibility[service.id] !== false;
-        row.classList.toggle("service-enabled", checked);
-        row.classList.toggle("service-disabled", !checked);
+        const visibility = getServiceVisibility(service.id);
+        updateServiceRowState(row, visibility);
 
         const body = document.createElement("span");
         body.className = "service-mode-body";
@@ -452,24 +454,53 @@ function renderServiceSettings() {
         title.className = "service-mode-title";
         title.textContent = service.label;
 
-        const input = document.createElement("input");
-        input.type = "checkbox";
-        input.checked = checked;
-        input.addEventListener("change", () => {
-            serviceVisibility = {
-                ...serviceVisibility,
-                [service.id]: input.checked
-            };
-            saveServiceVisibility();
-            row.classList.toggle("service-enabled", input.checked);
-            row.classList.toggle("service-disabled", !input.checked);
-            renderNotes();
-        });
-
         body.append(icon, title);
-        row.append(body, input);
+
+        const controls = document.createElement("div");
+        controls.className = "service-visibility-controls";
+        controls.append(
+            createServiceVisibilityToggle(service, "popup", "Popup", visibility.popup, row),
+            createServiceVisibilityToggle(service, "profile", "Profiles", visibility.profile, row)
+        );
+
+        row.append(body, controls);
         els.serviceModes.appendChild(row);
     });
+}
+
+function createServiceVisibilityToggle(service, target, labelText, checked, row) {
+    const label = document.createElement("label");
+    label.className = "service-visibility-toggle";
+
+    const text = document.createElement("span");
+    text.textContent = labelText;
+
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.checked = checked;
+    input.setAttribute("aria-label", `Show ${service.label} in ${labelText.toLowerCase()}`);
+    input.addEventListener("change", () => {
+        const visibility = {
+            ...getServiceVisibility(service.id),
+            [target]: input.checked
+        };
+        serviceVisibility = {
+            ...serviceVisibility,
+            [service.id]: visibility
+        };
+        updateServiceRowState(row, visibility);
+        saveServiceVisibility();
+        renderNotes();
+    });
+
+    label.append(text, input);
+    return label;
+}
+
+function updateServiceRowState(row, visibility) {
+    const enabled = visibility.popup || visibility.profile;
+    row.classList.toggle("service-enabled", enabled);
+    row.classList.toggle("service-disabled", !enabled);
 }
 
 function renderCustomServiceFields(note) {
@@ -500,7 +531,7 @@ function getCustomServiceValues() {
 }
 
 function buildServiceUrl(service, id, note) {
-    if (serviceVisibility[service.id] === false) return "";
+    if (!getServiceVisibility(service.id).popup) return "";
     const mode = service.mode || "custom";
     const steamid3 = String(id);
     const steamid64 = accountIdToSteamId64(id);
@@ -531,22 +562,66 @@ function getCustomServices() {
 }
 
 function normalizeServiceVisibility(value, legacyServices) {
-    const next = { ...DEFAULT_SERVICE_VISIBILITY };
+    const next = createDefaultServiceVisibility();
     const hasVisibility = value && typeof value === "object" && !Array.isArray(value);
     if (hasVisibility) {
         STATIC_SERVICES.forEach((service) => {
-            if (service.id in value) next[service.id] = value[service.id] !== false;
+            if (!(service.id in value)) return;
+            const saved = value[service.id];
+            if (saved && typeof saved === "object" && !Array.isArray(saved)) {
+                next[service.id] = {
+                    popup: saved.popup !== false,
+                    profile: saved.profile !== false
+                };
+            } else {
+                const enabled = saved !== false;
+                next[service.id] = { popup: enabled, profile: enabled };
+            }
         });
     }
 
     if (!hasVisibility && Array.isArray(legacyServices)) {
         legacyServices.forEach((service) => {
             if (!service || !STATIC_SERVICES.some((item) => item.id === service.id)) return;
-            next[service.id] = service.showOnPage !== false && (!Array.isArray(service.pages) || service.pages.length > 0);
+            const enabled = service.showOnPage !== false && (!Array.isArray(service.pages) || service.pages.length > 0);
+            next[service.id] = { popup: enabled, profile: enabled };
         });
     }
 
     return next;
+}
+
+function createDefaultServiceVisibility() {
+    return Object.fromEntries(STATIC_SERVICES.map((service) => [
+        service.id,
+        { popup: true, profile: true }
+    ]));
+}
+
+function hasStructuredServiceVisibility(value) {
+    return !!value
+        && typeof value === "object"
+        && !Array.isArray(value)
+        && STATIC_SERVICES.every((service) => {
+            const saved = value[service.id];
+            return saved
+                && typeof saved === "object"
+                && !Array.isArray(saved)
+                && "popup" in saved
+                && "profile" in saved;
+        });
+}
+
+function getServiceVisibility(serviceId) {
+    const value = serviceVisibility[serviceId];
+    if (value && typeof value === "object") {
+        return {
+            popup: value.popup !== false,
+            profile: value.profile !== false
+        };
+    }
+    const enabled = value !== false;
+    return { popup: enabled, profile: enabled };
 }
 
 function saveServiceVisibility() {
@@ -619,3 +694,10 @@ function formatDate(value) {
         minute: "2-digit"
     }).format(date);
 }
+
+
+document.querySelectorAll("[data-rate-link]").forEach((link) => {
+    if (navigator.userAgent.includes("Firefox")) {
+        link.href = link.dataset.firefoxUrl;
+    }
+});

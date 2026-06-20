@@ -61,7 +61,10 @@ const STATIC_SERVICES = [
     }
 ];
 
-const DEFAULT_SERVICE_VISIBILITY = Object.fromEntries(STATIC_SERVICES.map((service) => [service.id, true]));
+const DEFAULT_SERVICE_VISIBILITY = Object.fromEntries(STATIC_SERVICES.map((service) => [
+    service.id,
+    { popup: true, profile: true }
+]));
 
 document.addEventListener("DOMContentLoaded", () => {
     chrome.storage.local.get(["enabled"], (data) => {
@@ -288,7 +291,9 @@ function createNotes(steamId) {
         addField("Nick", "text", "nickname");
         addField("Info", "text", "info", true);
         addField("Twitch", "text", "twitch");
-        addField("Faceit", "text", "faceit");
+        if (isServiceEnabledAnywhere("faceit", visibility)) {
+            addField("Faceit", "text", "faceit");
+        }
         addField("Cheater", "checkbox", "cheater");
         addField("Suspect", "checkbox", "suspect");
         editorBlock.appendChild(flagsRow);
@@ -336,7 +341,7 @@ function replacePlayerLinks() {
                 a.textContent = "";
                 a.appendChild(document.createTextNode(getNoteDisplayTitle(id, saved[id], a.parentElement.title)));
 
-                ["twitch", "faceit"].forEach((serviceId) => {
+                ["twitch"].forEach((serviceId) => {
                     const service = STATIC_SERVICES.find((item) => item.id === serviceId);
                     const href = buildPageServiceUrl(service, id, saved[id], visibility);
                     if (!href) return;
@@ -472,7 +477,7 @@ function addPageServiceLinks(container, visibility, steamId, note) {
 }
 
 function buildPageServiceUrl(service, id, note, visibility = DEFAULT_SERVICE_VISIBILITY) {
-    if (!service || visibility[service.id] === false) return "";
+    if (!service || !getServiceVisibility(visibility, service.id).profile) return "";
     const mode = service.mode || "custom";
     const steamid3 = String(id);
     const steamid64 = accountIdToSteamId64(steamid3);
@@ -541,22 +546,57 @@ function cleanDisplayName(value, steamId) {
 }
 
 function normalizeServiceVisibility(value, legacyServices) {
-    const next = { ...DEFAULT_SERVICE_VISIBILITY };
+    const next = createDefaultServiceVisibility();
     const hasVisibility = value && typeof value === "object" && !Array.isArray(value);
     if (hasVisibility) {
         STATIC_SERVICES.forEach((service) => {
-            if (service.id in value) next[service.id] = value[service.id] !== false;
+            if (!(service.id in value)) return;
+            const saved = value[service.id];
+            if (saved && typeof saved === "object" && !Array.isArray(saved)) {
+                next[service.id] = {
+                    popup: saved.popup !== false,
+                    profile: saved.profile !== false
+                };
+            } else {
+                const enabled = saved !== false;
+                next[service.id] = { popup: enabled, profile: enabled };
+            }
         });
     }
 
     if (!hasVisibility && Array.isArray(legacyServices)) {
         legacyServices.forEach((service) => {
             if (!service || !STATIC_SERVICES.some((item) => item.id === service.id)) return;
-            next[service.id] = service.showOnPage !== false && (!Array.isArray(service.pages) || service.pages.length > 0);
+            const enabled = service.showOnPage !== false && (!Array.isArray(service.pages) || service.pages.length > 0);
+            next[service.id] = { popup: enabled, profile: enabled };
         });
     }
 
     return next;
+}
+
+function createDefaultServiceVisibility() {
+    return Object.fromEntries(STATIC_SERVICES.map((service) => [
+        service.id,
+        { popup: true, profile: true }
+    ]));
+}
+
+function getServiceVisibility(visibility, serviceId) {
+    const value = visibility?.[serviceId];
+    if (value && typeof value === "object") {
+        return {
+            popup: value.popup !== false,
+            profile: value.profile !== false
+        };
+    }
+    const enabled = value !== false;
+    return { popup: enabled, profile: enabled };
+}
+
+function isServiceEnabledAnywhere(serviceId, visibility) {
+    const state = getServiceVisibility(visibility, serviceId);
+    return state.popup || state.profile;
 }
 
 function parseNotes(value) {

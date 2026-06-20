@@ -1,7 +1,7 @@
 {
     "name": "Steam Notes",
     "description": "Local notes for Steam, Tracklock, Statlocker, Faceit, and Twitch profiles.",
-    "version": "1.0",
+    "version": "1.1",
     "manifest_version": 3,
     "permissions": ["tabs", "storage", "webNavigation"],
     "icons": {
@@ -55,5 +55,14 @@
                 "https://www.twitch.tv/*"
             ]
         }
-    ]
+    ],
+    "browser_specific_settings": {
+        "gecko": {
+            "id": "turbo@steamnotes",
+            "strict_min_version": "109.0",
+            "data_collection_permissions": {
+                "required": ["none"]
+            }
+        }
+    }
 }

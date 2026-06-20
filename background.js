@@ -1,13 +1,13 @@
 const DEFAULT_SETTINGS = {
     enabled: true,
     steamnotesServiceVisibility: {
-        steam: true,
-        tracklock: true,
-        statlocker: true,
-        statlockerMatches: true,
-        deadlockApi: true,
-        twitch: true,
-        faceit: true
+        steam: { popup: true, profile: true },
+        tracklock: { popup: true, profile: true },
+        statlocker: { popup: true, profile: true },
+        statlockerMatches: { popup: true, profile: true },
+        deadlockApi: { popup: true, profile: true },
+        twitch: { popup: true, profile: true },
+        faceit: { popup: true, profile: true }
     }
 };
 
