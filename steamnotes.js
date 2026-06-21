@@ -376,8 +376,10 @@ const statlockerMatchObserver = new MutationObserver(() => {
 });
 
 let lastPanelUser;
+let twitchPanelRenderVersion = 0;
 
 function handleAddTwitch(value) {
+    const renderVersion = ++twitchPanelRenderVersion;
     if (value) {
         let container = document.getElementById("turbo-notes-twitch-container");
         if (!container) {
@@ -391,16 +393,27 @@ function handleAddTwitch(value) {
 
         let twitchUsername = window.location.href.match(/https:\/\/www\.twitch\.tv\/([a-zA-Z0-9_]{4,25})/);
         if (twitchUsername) twitchUsername = twitchUsername[1].toLowerCase();
+        lastPanelUser = twitchUsername;
 
         chrome.storage.local.get(["steamNotes", SERVICE_VISIBILITY_KEY, "steamnotesServices"], (data) => {
+            if (renderVersion !== twitchPanelRenderVersion || !container.isConnected) return;
+
+            let currentUsername = window.location.href.match(/https:\/\/www\.twitch\.tv\/([a-zA-Z0-9_]{4,25})/);
+            if (currentUsername) currentUsername = currentUsername[1].toLowerCase();
+            if (currentUsername !== twitchUsername) return;
+
+            container.replaceChildren();
             const saved = parseNotes(data.steamNotes);
             const visibility = normalizeServiceVisibility(data[SERVICE_VISIBILITY_KEY], data.steamnotesServices);
+            const renderedIds = new Set();
 
             Object.entries(saved).forEach(([id, note]) => {
                 const savedTwitch = getPageCustomValue(note, "twitch");
-                if (savedTwitch && twitchUsername == savedTwitch.toLowerCase() && !note.hideOnTwitch) {
+                if (savedTwitch && twitchUsername == savedTwitch.toLowerCase() && !note.hideOnTwitch && !renderedIds.has(id)) {
+                    renderedIds.add(id);
                     const panel = document.createElement("div");
                     panel.classList.add("turbo-notes-twitch-panel");
+                    panel.dataset.steamNotesId = id;
 
                     const close = document.createElement("div");
                     close.classList.add("turbo-notes-twitch-close");
