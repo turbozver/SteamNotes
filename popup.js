@@ -1,7 +1,9 @@
 const SERVICE_VISIBILITY_KEY = "steamnotesServiceVisibility";
+const EMPTY_MATCH_NAMES_KEY = "steamnotesShowEmptyActiveMatchNames";
 const STORAGE_KEYS = [
     "enabled",
-    SERVICE_VISIBILITY_KEY
+    SERVICE_VISIBILITY_KEY,
+    EMPTY_MATCH_NAMES_KEY
 ];
 
 const STATIC_SERVICES = [
@@ -65,7 +67,8 @@ const DEFAULT_SERVICE_VISIBILITY = Object.fromEntries(STATIC_SERVICES.map((servi
 
 const DEFAULT_SETTINGS = {
     enabled: true,
-    [SERVICE_VISIBILITY_KEY]: DEFAULT_SERVICE_VISIBILITY
+    [SERVICE_VISIBILITY_KEY]: DEFAULT_SERVICE_VISIBILITY,
+    [EMPTY_MATCH_NAMES_KEY]: true
 };
 
 const els = {
@@ -90,7 +93,9 @@ const els = {
     editSuspect: document.getElementById("editSuspect"),
     editHideOnTwitch: document.getElementById("editHideOnTwitch"),
     createdAt: document.getElementById("createdAt"),
+    pinNote: document.getElementById("pinNote"),
     deleteNote: document.getElementById("deleteNote"),
+    showEmptyActiveMatchNames: document.getElementById("showEmptyActiveMatchNames"),
     importFile: document.getElementById("importFile"),
     importBtn: document.getElementById("importBtn"),
     exportBtn: document.getElementById("exportBtn"),
@@ -101,6 +106,9 @@ let notes = {};
 let serviceVisibility = createDefaultServiceVisibility();
 let editingId = null;
 let renderRequest = 0;
+let draggedNoteId = null;
+let dragMoved = false;
+let dropMarker = null;
 
 init();
 
@@ -116,6 +124,8 @@ function init() {
     els.cheatersOnly.addEventListener("change", renderNotes);
     els.suspectsOnly.addEventListener("change", renderNotes);
     els.deleteNote.addEventListener("click", deleteCurrentNote);
+    els.pinNote.addEventListener("click", toggleCurrentNotePin);
+    els.showEmptyActiveMatchNames.addEventListener("change", () => saveSetting(EMPTY_MATCH_NAMES_KEY, els.showEmptyActiveMatchNames.checked));
     els.importBtn.addEventListener("click", () => els.importFile.click());
     els.exportBtn.addEventListener("click", exportData);
     els.importFile.addEventListener("change", importData);
@@ -132,6 +142,7 @@ function init() {
         notes = sanitizeNotes(parseNotes(data.steamNotes));
         serviceVisibility = normalizeServiceVisibility(data[SERVICE_VISIBILITY_KEY], data.steamnotesServices);
         els.enabled.checked = "enabled" in data ? !!data.enabled : DEFAULT_SETTINGS.enabled;
+        els.showEmptyActiveMatchNames.checked = EMPTY_MATCH_NAMES_KEY in data ? !!data[EMPTY_MATCH_NAMES_KEY] : DEFAULT_SETTINGS[EMPTY_MATCH_NAMES_KEY];
 
         if (!hasStructuredServiceVisibility(data[SERVICE_VISIBILITY_KEY])) {
             chrome.storage.local.set({ [SERVICE_VISIBILITY_KEY]: serviceVisibility });
@@ -190,6 +201,10 @@ function renderNotes() {
             const aOpen = isStreamOpened(tabs, getCustomValue(a[1], "twitch"));
             const bOpen = isStreamOpened(tabs, getCustomValue(b[1], "twitch"));
             if (aOpen !== bOpen) return bOpen - aOpen;
+            if (!!a[1].pinned !== !!b[1].pinned) return Number(!!b[1].pinned) - Number(!!a[1].pinned);
+            const aOrder = Number.isFinite(Number(a[1].order)) ? Number(a[1].order) : Number.MAX_SAFE_INTEGER;
+            const bOrder = Number.isFinite(Number(b[1].order)) ? Number(b[1].order) : Number.MAX_SAFE_INTEGER;
+            if (aOrder !== bOrder) return aOrder - bOrder;
             return (b[1].createdAt || 0) - (a[1].createdAt || 0);
         });
 
@@ -202,18 +217,32 @@ function renderNotes() {
         }
 
         entries.forEach(([id, note]) => {
-            const row = createNoteRow(id, note);
-            if (isStreamOpened(tabs, getCustomValue(note, "twitch"))) row.classList.add("is-live");
+            const isLive = isStreamOpened(tabs, getCustomValue(note, "twitch"));
+            const row = createNoteRow(id, note, isLive);
             els.notesList.appendChild(row);
         });
     });
 }
 
-function createNoteRow(id, note) {
+function createNoteRow(id, note, isLive = false) {
     const row = document.createElement("article");
     row.className = "note-row";
+    row.dataset.noteId = id;
     if (note.cheater) row.classList.add("cheater");
     else if (note.suspect) row.classList.add("suspect");
+    if (note.pinned) row.classList.add("pinned");
+    if (isLive) row.classList.add("is-live", "is-locked");
+    row.dataset.sortGroup = note.pinned ? "pinned" : "normal";
+
+    const handle = document.createElement("button");
+    handle.type = "button";
+    handle.className = "note-drag";
+    handle.draggable = !isLive;
+    handle.disabled = isLive;
+    handle.title = isLive ? "Opened Twitch notes stay at the top" : "Drag to reorder";
+    handle.setAttribute("aria-label", handle.title);
+    handle.textContent = "⋮⋮";
+    row.appendChild(handle);
 
     const main = document.createElement("button");
     main.type = "button";
@@ -235,13 +264,145 @@ function createNoteRow(id, note) {
 
     const links = document.createElement("div");
     links.className = "note-links";
+
     STATIC_SERVICES.forEach((service) => {
         const href = buildServiceUrl(service, id, note);
         if (href) addIconLink(links, service, href);
     });
     row.appendChild(links);
 
+    row.addEventListener("dragstart", (event) => {
+        if (isLive) {
+            event.preventDefault();
+            return;
+        }
+        draggedNoteId = id;
+        dragMoved = false;
+        row.classList.add("dragging");
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("text/plain", id);
+    });
+    row.addEventListener("dragend", () => {
+        draggedNoteId = null;
+        dragMoved = false;
+        removeDropMarker();
+        row.classList.remove("dragging");
+    });
+    row.addEventListener("dragover", (event) => {
+        if (!draggedNoteId || draggedNoteId === id || isLive) return;
+        const dragged = els.notesList.querySelector(`[data-note-id="${CSS.escape(draggedNoteId)}"]`);
+        if (!dragged || dragged.classList.contains("is-locked")) return;
+        if (dragged.dataset.sortGroup !== row.dataset.sortGroup) {
+            removeDropMarker();
+            return;
+        }
+        event.preventDefault();
+        placeDropMarker(row, isAfterRowMiddle(event, row));
+        dragMoved = true;
+    });
+    row.addEventListener("drop", (event) => {
+        if (!draggedNoteId || draggedNoteId === id || isLive) return;
+        event.preventDefault();
+        dropDraggedNote();
+    });
+
     return row;
+}
+
+function isAfterRowMiddle(event, row) {
+    const rect = row.getBoundingClientRect();
+    return event.clientY > rect.top + rect.height / 2;
+}
+
+function placeDropMarker(row, after) {
+    if (!dropMarker) {
+        dropMarker = document.createElement("div");
+        dropMarker.className = "note-drop-marker";
+        dropMarker.addEventListener("dragover", (event) => {
+            if (!draggedNoteId) return;
+            event.preventDefault();
+        });
+        dropMarker.addEventListener("drop", (event) => {
+            event.preventDefault();
+            dropDraggedNote();
+        });
+    }
+    dropMarker.dataset.targetId = row.dataset.noteId;
+    dropMarker.dataset.after = String(after);
+    if (after) {
+        if (row.nextElementSibling !== dropMarker) row.after(dropMarker);
+    }
+    else if (row.previousElementSibling !== dropMarker) {
+        row.before(dropMarker);
+    }
+}
+
+function removeDropMarker() {
+    dropMarker?.remove();
+}
+
+function dropDraggedNote() {
+    if (!draggedNoteId || !dropMarker?.isConnected) return;
+    const sourceId = draggedNoteId;
+    const targetId = dropMarker.dataset.targetId;
+    const after = dropMarker.dataset.after === "true";
+    const dragged = els.notesList.querySelector(`[data-note-id="${CSS.escape(sourceId)}"]`);
+    if (!dragged || dragged.classList.contains("is-locked")) return;
+    dropMarker.replaceWith(dragged);
+    removeDropMarker();
+    reorderNoteInFullList(sourceId, targetId, after);
+}
+
+function toggleCurrentNotePin() {
+    if (!editingId || !notes[editingId]) return;
+    notes[editingId] = {
+        ...notes[editingId],
+        pinned: !notes[editingId].pinned,
+        createdAt: notes[editingId].createdAt || Date.now()
+    };
+    updateEditPinButton(notes[editingId]);
+    chrome.storage.local.set({ steamNotes: JSON.stringify(notes) }, renderNotes);
+}
+
+function updateEditPinButton(note) {
+    const pinned = !!note?.pinned;
+    els.pinNote.classList.toggle("is-pinned", pinned);
+    els.pinNote.title = pinned ? "Unpin note" : "Pin note";
+    els.pinNote.setAttribute("aria-label", els.pinNote.title);
+}
+
+function reorderNoteInFullList(sourceId, targetId, after) {
+    const source = notes[sourceId];
+    const target = notes[targetId];
+    if (!source || !target || !!source.pinned !== !!target.pinned) return;
+
+    chrome.tabs.query({}, (tabs) => {
+        const group = source.pinned ? "pinned" : "normal";
+        const orderedIds = Object.entries(notes)
+            .filter(([id, note]) => id !== sourceId && !isStreamOpened(tabs, getCustomValue(note, "twitch")))
+            .filter(([, note]) => (note.pinned ? "pinned" : "normal") === group)
+            .sort(compareNotesByOrder)
+            .map(([id]) => id);
+        const targetIndex = orderedIds.indexOf(targetId);
+        if (targetIndex < 0) return;
+
+        orderedIds.splice(targetIndex + (after ? 1 : 0), 0, sourceId);
+        orderedIds.forEach((id, index) => {
+            notes[id] = {
+                ...notes[id],
+                order: index,
+                createdAt: notes[id].createdAt || Date.now()
+            };
+        });
+        chrome.storage.local.set({ steamNotes: JSON.stringify(notes) }, renderNotes);
+    });
+}
+
+function compareNotesByOrder([, a], [, b]) {
+    const aOrder = Number.isFinite(Number(a.order)) ? Number(a.order) : Number.MAX_SAFE_INTEGER;
+    const bOrder = Number.isFinite(Number(b.order)) ? Number(b.order) : Number.MAX_SAFE_INTEGER;
+    if (aOrder !== bOrder) return aOrder - bOrder;
+    return (b.createdAt || 0) - (a.createdAt || 0);
 }
 
 function addIconLink(container, service, href) {
@@ -267,13 +428,14 @@ function addIconLink(container, service, href) {
 function openEdit(id) {
     editingId = id;
     const note = notes[id] || {};
-    els.editTitle.textContent = note.nickname || note.displayName || "Edit Note";
+    els.editTitle.textContent = note.nickname || cleanStoredDisplayName(note.displayName, id) || "Edit Note";
     els.editNickname.value = note.nickname || "";
     els.editInfo.value = note.info || "";
     els.editCheater.checked = !!note.cheater;
     els.editSuspect.checked = !!note.suspect;
     els.editHideOnTwitch.checked = !!note.hideOnTwitch;
     els.createdAt.textContent = note.createdAt ? formatDate(note.createdAt) : "";
+    updateEditPinButton(note);
     renderCustomServiceFields(note);
     showView("edit");
 }
@@ -289,6 +451,8 @@ function saveEdit() {
         hideOnTwitch: els.editHideOnTwitch.checked,
         serviceLogins,
         displayName: notes[editingId]?.displayName || "",
+        pinned: !!notes[editingId]?.pinned,
+        order: Number.isFinite(Number(notes[editingId]?.order)) ? Number(notes[editingId].order) : undefined,
         createdAt: notes[editingId]?.createdAt || Date.now()
     };
 
@@ -342,6 +506,7 @@ function importData() {
             }
 
             if ("enabled" in source) next.enabled = !!source.enabled;
+            if (EMPTY_MATCH_NAMES_KEY in source) next[EMPTY_MATCH_NAMES_KEY] = !!source[EMPTY_MATCH_NAMES_KEY];
             if (source[SERVICE_VISIBILITY_KEY] || source.steamnotesServices) {
                 next[SERVICE_VISIBILITY_KEY] = normalizeServiceVisibility(source[SERVICE_VISIBILITY_KEY], source.steamnotesServices);
             }
@@ -360,6 +525,10 @@ function importData() {
                 if ("enabled" in next) {
                     els.enabled.checked = !!next.enabled;
                     broadcastSetting("enabled", !!next.enabled);
+                }
+                if (EMPTY_MATCH_NAMES_KEY in next) {
+                    els.showEmptyActiveMatchNames.checked = !!next[EMPTY_MATCH_NAMES_KEY];
+                    broadcastSetting(EMPTY_MATCH_NAMES_KEY, !!next[EMPTY_MATCH_NAMES_KEY]);
                 }
                 renderServiceSettings();
                 updateHeader();
@@ -382,12 +551,15 @@ function resetData() {
     chrome.storage.local.set({
         enabled: DEFAULT_SETTINGS.enabled,
         [SERVICE_VISIBILITY_KEY]: createDefaultServiceVisibility(),
+        [EMPTY_MATCH_NAMES_KEY]: DEFAULT_SETTINGS[EMPTY_MATCH_NAMES_KEY],
         steamNotes: "{}"
     }, () => {
         notes = {};
         els.enabled.checked = DEFAULT_SETTINGS.enabled;
+        els.showEmptyActiveMatchNames.checked = DEFAULT_SETTINGS[EMPTY_MATCH_NAMES_KEY];
         broadcastSetting("enabled", DEFAULT_SETTINGS.enabled);
         broadcastSetting(SERVICE_VISIBILITY_KEY, serviceVisibility);
+        broadcastSetting(EMPTY_MATCH_NAMES_KEY, DEFAULT_SETTINGS[EMPTY_MATCH_NAMES_KEY]);
         renderServiceSettings();
         updateHeader();
         renderNotes();
@@ -428,7 +600,17 @@ function hasVisibleData(id, note) {
 }
 
 function getNoteListTitle(id, note) {
-    return note.nickname || note.displayName || id;
+    return note.nickname || cleanStoredDisplayName(note.displayName, id) || id;
+}
+
+function cleanStoredDisplayName(value, id) {
+    const text = String(value || "")
+        .replace(/\s+/g, " ")
+        .trim();
+    if (/^(loading|profile|player|overview|matches?|stats?|statlocker|tracklock|deadlock)$/i.test(text)) return "";
+    if (/statlocker|tracklock|deadlock api|active matches|searchby=/i.test(text)) return "";
+    if (!text || text === id || /^\d+$/.test(text)) return "";
+    return text;
 }
 
 function renderServiceSettings() {
@@ -670,6 +852,10 @@ function isSuitableTab(url, name) {
             || url.startsWith("https://tracklock.gg/players/")
             || url.startsWith("https://statlocker.gg/")
             || url.startsWith("https://www.twitch.tv/");
+    }
+
+    if (name === EMPTY_MATCH_NAMES_KEY) {
+        return url.startsWith("https://statlocker.gg/");
     }
 
     return false;

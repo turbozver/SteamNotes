@@ -8,7 +8,8 @@ const DEFAULT_SETTINGS = {
         deadlockApi: { popup: true, profile: true },
         twitch: { popup: true, profile: true },
         faceit: { popup: true, profile: true }
-    }
+    },
+    steamnotesShowEmptyActiveMatchNames: true
 };
 
 chrome.runtime.onInstalled.addListener(() => {

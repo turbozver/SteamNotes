@@ -50,6 +50,20 @@
 
                 <div class="settings-block">
                     <div class="settings-block-title">
+                        <strong>Statlocker</strong>
+                        <span>Active Matches display tweaks.</span>
+                    </div>
+                    <label class="setting-row">
+                        <span>
+                            <strong>Show empty player names</strong>
+                            <small>Replace blank names with *empty* so profile links stay clickable.</small>
+                        </span>
+                        <input id="showEmptyActiveMatchNames" type="checkbox">
+                    </label>
+                </div>
+
+                <div class="settings-block">
+                    <div class="settings-block-title">
                         <strong>About</strong>
                     </div>
                     <div class="settings-links">
@@ -112,6 +126,7 @@
             </div>
             <footer class="edit-footer">
                 <span id="createdAt"></span>
+                <button id="pinNote" class="pin-button" type="button" title="Pin note" aria-label="Pin note">&#9733;</button>
                 <button id="deleteNote" class="danger-button" type="button" title="Delete note" aria-label="Delete note">
                     <svg width="19" height="19" viewBox="0 0 24 24" fill="none">
                         <path d="M7 21q-.825 0-1.413-.588T5 19V7H4V5h5V4h6v1h5v2h-1v12q0 .825-.588 1.413T17 21H7Zm10-14H7v12h10V7ZM9 17h2V9H9v8Zm4 0h2V9h-2v8Z" fill="currentColor"/>

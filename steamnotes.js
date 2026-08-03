@@ -1,4 +1,5 @@
 const SERVICE_VISIBILITY_KEY = "steamnotesServiceVisibility";
+const EMPTY_MATCH_NAMES_KEY = "steamnotesShowEmptyActiveMatchNames";
 
 const STATIC_SERVICES = [
     {
@@ -87,6 +88,9 @@ chrome.runtime.onMessage.addListener((message) => {
         }
         else if (name === SERVICE_VISIBILITY_KEY) {
             refreshSteamNotesPanels();
+        }
+        else if (name === EMPTY_MATCH_NAMES_KEY && getCurrentPageKey() === "statlockerMatches") {
+            handleStatlockerMatchPlayers(true);
         }
     }
     else if (message.type == "urlChanged") {
@@ -198,9 +202,10 @@ function createNotes(steamId) {
         const userData = saved[steamId] || { nickname: "", info: "", twitch: "", faceit: "", cheater: false, suspect: false };
         const visibility = normalizeServiceVisibility(data[SERVICE_VISIBILITY_KEY], data.steamnotesServices);
         const pageDisplayName = getCurrentDisplayName(steamId);
-        userData.displayName = userData.displayName || pageDisplayName;
+        const savedDisplayName = cleanDisplayName(userData.displayName, steamId);
+        userData.displayName = savedDisplayName || pageDisplayName;
 
-        if (saved[steamId] && pageDisplayName && !saved[steamId].displayName) {
+        if (saved[steamId] && pageDisplayName && savedDisplayName !== pageDisplayName) {
             saved[steamId] = { ...saved[steamId], displayName: pageDisplayName };
             chrome.storage.local.set({ steamNotes: JSON.stringify(saved) });
         }
@@ -328,17 +333,26 @@ function handleStatlockerMatchPlayers(value) {
 }
 
 function replacePlayerLinks() {
-    chrome.storage.local.get(["steamNotes", SERVICE_VISIBILITY_KEY, "steamnotesServices"], (data) => {
+    chrome.storage.local.get(["steamNotes", SERVICE_VISIBILITY_KEY, "steamnotesServices", EMPTY_MATCH_NAMES_KEY], (data) => {
         const saved = parseNotes(data.steamNotes);
         const visibility = normalizeServiceVisibility(data[SERVICE_VISIBILITY_KEY], data.steamnotesServices);
+        const showEmptyNames = data[EMPTY_MATCH_NAMES_KEY] !== false;
 
         document.querySelectorAll('.lm-player-name > a[href^="/profile/"]').forEach((a) => {
             const match = a.getAttribute("href").match(/\/profile\/(\d+)/);
             const id = match?.[1];
             if (!id) return;
 
+            if (!showEmptyNames && a.dataset.steamnotesEmptyName === "true") {
+                a.textContent = "";
+                a.style.color = "";
+                delete a.dataset.steamnotesEmptyName;
+                return;
+            }
+
             if (saved[id]) {
                 a.textContent = "";
+                delete a.dataset.steamnotesEmptyName;
                 a.appendChild(document.createTextNode(getNoteDisplayTitle(id, saved[id], a.parentElement.title)));
 
                 ["twitch"].forEach((serviceId) => {
@@ -362,8 +376,10 @@ function replacePlayerLinks() {
                 a.style.color = saved[id].cheater ? "red" : saved[id].suspect ? "#d19042" : "#5fda72";
             }
             else if (a.textContent.trim() === "" || a.textContent.trim() === "็็็") {
+                if (!showEmptyNames) return;
                 a.textContent = "*empty*";
                 a.style.color = "gray";
+                a.dataset.steamnotesEmptyName = "true";
             }
         });
     });
@@ -517,11 +533,11 @@ function getPageCustomValue(note, serviceId, service) {
 }
 
 function getNoteDisplayTitle(id, note, fallback = "") {
-    return note?.nickname || note?.displayName || cleanDisplayName(fallback, id) || id;
+    return note?.nickname || cleanDisplayName(note?.displayName, id) || cleanDisplayName(fallback, id) || id;
 }
 
 function getCurrentDisplayName(steamId) {
-    const selectors = [
+    const commonSelectors = [
         ".actual_persona_name",
         ".persona_name_text_content",
         ".profile_header .persona_name",
@@ -535,9 +551,19 @@ function getCurrentDisplayName(steamId) {
         "h1"
     ];
 
-    for (const selector of selectors) {
-        const value = cleanDisplayName(document.querySelector(selector)?.textContent, steamId);
-        if (value) return value;
+    const statlockerSelectors = [
+        "[class*='player'][class*='name']",
+        "[class*='profile'][class*='name']",
+        "main h1",
+        "h1"
+    ];
+
+    const selectors = window.location.hostname === "statlocker.gg" ? statlockerSelectors : commonSelectors;
+    const selectorValue = getDisplayNameFromSelectors(selectors, steamId);
+    if (selectorValue) return selectorValue;
+
+    if (window.location.hostname === "statlocker.gg") {
+        return "";
     }
 
     const metaTitle = document.querySelector('meta[property="og:title"]')?.content;
@@ -547,6 +573,15 @@ function getCurrentDisplayName(steamId) {
     return cleanDisplayName(document.title, steamId);
 }
 
+function getDisplayNameFromSelectors(selectors, steamId) {
+    for (const selector of selectors) {
+        const value = cleanDisplayName(document.querySelector(selector)?.textContent, steamId);
+        if (value) return value;
+    }
+
+    return "";
+}
+
 function cleanDisplayName(value, steamId) {
     const text = String(value || "")
         .replace(/\s+/g, " ")
@@ -554,6 +589,8 @@ function cleanDisplayName(value, steamId) {
         .replace(/^Profile\s*[-|–]\s*/i, "")
         .trim();
 
+    if (/^(loading|profile|player|overview|matches?|stats?|statlocker|tracklock|deadlock)$/i.test(text)) return "";
+    if (/statlocker|tracklock|deadlock api|active matches|searchby=/i.test(text)) return "";
     if (!text || text === steamId || /^\d+$/.test(text)) return "";
     return text;
 }

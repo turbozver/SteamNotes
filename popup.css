@@ -241,7 +241,7 @@ textarea {
 
 .note-row {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: 18px minmax(0, 1fr) auto;
     gap: 7px;
     align-items: center;
     min-height: 34px;
@@ -261,12 +261,63 @@ textarea {
     background: #141820;
 }
 
+.note-row.dragging {
+    opacity: 0.58;
+}
+
+.note-drop-marker {
+    height: 6px;
+    margin: 5px 0;
+    border-radius: 999px;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    opacity: 0.9;
+    pointer-events: auto;
+}
+
+.note-row.pinned {
+    border-left-color: #ffd45a;
+    background: #141412;
+}
+
 .note-row.cheater {
     border-left-color: #c44545;
 }
 
 .note-row.suspect {
     border-left-color: #d19042;
+}
+
+.note-drag {
+    display: inline-grid;
+    place-items: center;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border-radius: 4px;
+    color: var(--muted);
+    background: transparent;
+    line-height: 1;
+}
+
+.note-drag {
+    cursor: grab;
+    font-size: 12px;
+    letter-spacing: -3px;
+}
+
+.note-drag:active {
+    cursor: grabbing;
+}
+
+.note-drag:disabled {
+    cursor: default;
+    opacity: 0.25;
+}
+
+.note-row:hover .note-drag,
+.note-drag:hover:not(:disabled) {
+    color: var(--text);
+    background: #202532;
 }
 
 .note-main {
@@ -298,6 +349,7 @@ textarea {
 .note-links {
     display: flex;
     gap: 3px;
+    align-items: center;
 }
 
 .note-links a {
@@ -332,6 +384,10 @@ textarea {
 .note-row.is-live {
     background: #1b0229;
     border-color: transparent;
+    border-left-color: var(--accent);
+}
+
+.note-row.is-live.pinned {
     border-left-color: var(--accent);
 }
 
@@ -696,9 +752,35 @@ textarea {
 .edit-footer {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-end;
+    gap: 8px;
     margin-top: 12px;
     color: var(--muted);
+}
+
+.edit-footer #createdAt {
+    margin-right: auto;
+}
+
+.pin-button {
+    display: inline-grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    color: #7d8291;
+    background: transparent;
+    border-radius: 7px;
+    font-size: 16px;
+}
+
+.pin-button:hover {
+    color: var(--text);
+    background: #202532;
+}
+
+.pin-button.is-pinned {
+    color: #ffd45a;
+    background: rgba(255, 212, 90, 0.12);
 }
 
 .danger-button {
