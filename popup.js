@@ -1,11 +1,13 @@
 const SERVICE_VISIBILITY_KEY = "steamnotesServiceVisibility";
 const EMPTY_MATCH_NAMES_KEY = "steamnotesShowEmptyActiveMatchNames";
 const AUTO_EXPAND_SINGLE_MATCH_KEY = "steamnotesAutoExpandSingleActiveMatch";
+const PRELOAD_MATCH_IDENTITIES_KEY = "steamnotesPreloadActiveMatchIdentities";
 const STORAGE_KEYS = [
     "enabled",
     SERVICE_VISIBILITY_KEY,
     EMPTY_MATCH_NAMES_KEY,
-    AUTO_EXPAND_SINGLE_MATCH_KEY
+    AUTO_EXPAND_SINGLE_MATCH_KEY,
+    PRELOAD_MATCH_IDENTITIES_KEY
 ];
 
 const STATIC_SERVICES = [
@@ -71,7 +73,8 @@ const DEFAULT_SETTINGS = {
     enabled: true,
     [SERVICE_VISIBILITY_KEY]: DEFAULT_SERVICE_VISIBILITY,
     [EMPTY_MATCH_NAMES_KEY]: true,
-    [AUTO_EXPAND_SINGLE_MATCH_KEY]: true
+    [AUTO_EXPAND_SINGLE_MATCH_KEY]: true,
+    [PRELOAD_MATCH_IDENTITIES_KEY]: false
 };
 
 const els = {
@@ -98,6 +101,7 @@ const els = {
     createdAt: document.getElementById("createdAt"),
     pinNote: document.getElementById("pinNote"),
     deleteNote: document.getElementById("deleteNote"),
+    preloadActiveMatchIdentities: document.getElementById("preloadActiveMatchIdentities"),
     autoExpandSingleActiveMatch: document.getElementById("autoExpandSingleActiveMatch"),
     showEmptyActiveMatchNames: document.getElementById("showEmptyActiveMatchNames"),
     importFile: document.getElementById("importFile"),
@@ -129,6 +133,7 @@ function init() {
     els.suspectsOnly.addEventListener("change", renderNotes);
     els.deleteNote.addEventListener("click", deleteCurrentNote);
     els.pinNote.addEventListener("click", toggleCurrentNotePin);
+    els.preloadActiveMatchIdentities.addEventListener("change", () => saveSetting(PRELOAD_MATCH_IDENTITIES_KEY, els.preloadActiveMatchIdentities.checked));
     els.autoExpandSingleActiveMatch.addEventListener("change", () => saveSetting(AUTO_EXPAND_SINGLE_MATCH_KEY, els.autoExpandSingleActiveMatch.checked));
     els.showEmptyActiveMatchNames.addEventListener("change", () => saveSetting(EMPTY_MATCH_NAMES_KEY, els.showEmptyActiveMatchNames.checked));
     els.importBtn.addEventListener("click", () => els.importFile.click());
@@ -147,6 +152,7 @@ function init() {
         notes = sanitizeNotes(parseNotes(data.steamNotes));
         serviceVisibility = normalizeServiceVisibility(data[SERVICE_VISIBILITY_KEY], data.steamnotesServices);
         els.enabled.checked = "enabled" in data ? !!data.enabled : DEFAULT_SETTINGS.enabled;
+        els.preloadActiveMatchIdentities.checked = PRELOAD_MATCH_IDENTITIES_KEY in data ? !!data[PRELOAD_MATCH_IDENTITIES_KEY] : DEFAULT_SETTINGS[PRELOAD_MATCH_IDENTITIES_KEY];
         els.autoExpandSingleActiveMatch.checked = AUTO_EXPAND_SINGLE_MATCH_KEY in data ? !!data[AUTO_EXPAND_SINGLE_MATCH_KEY] : DEFAULT_SETTINGS[AUTO_EXPAND_SINGLE_MATCH_KEY];
         els.showEmptyActiveMatchNames.checked = EMPTY_MATCH_NAMES_KEY in data ? !!data[EMPTY_MATCH_NAMES_KEY] : DEFAULT_SETTINGS[EMPTY_MATCH_NAMES_KEY];
 
@@ -512,6 +518,7 @@ function importData() {
             }
 
             if ("enabled" in source) next.enabled = !!source.enabled;
+            if (PRELOAD_MATCH_IDENTITIES_KEY in source) next[PRELOAD_MATCH_IDENTITIES_KEY] = !!source[PRELOAD_MATCH_IDENTITIES_KEY];
             if (AUTO_EXPAND_SINGLE_MATCH_KEY in source) next[AUTO_EXPAND_SINGLE_MATCH_KEY] = !!source[AUTO_EXPAND_SINGLE_MATCH_KEY];
             if (EMPTY_MATCH_NAMES_KEY in source) next[EMPTY_MATCH_NAMES_KEY] = !!source[EMPTY_MATCH_NAMES_KEY];
             if (source[SERVICE_VISIBILITY_KEY] || source.steamnotesServices) {
@@ -532,6 +539,10 @@ function importData() {
                 if ("enabled" in next) {
                     els.enabled.checked = !!next.enabled;
                     broadcastSetting("enabled", !!next.enabled);
+                }
+                if (PRELOAD_MATCH_IDENTITIES_KEY in next) {
+                    els.preloadActiveMatchIdentities.checked = !!next[PRELOAD_MATCH_IDENTITIES_KEY];
+                    broadcastSetting(PRELOAD_MATCH_IDENTITIES_KEY, !!next[PRELOAD_MATCH_IDENTITIES_KEY]);
                 }
                 if (AUTO_EXPAND_SINGLE_MATCH_KEY in next) {
                     els.autoExpandSingleActiveMatch.checked = !!next[AUTO_EXPAND_SINGLE_MATCH_KEY];
@@ -562,16 +573,19 @@ function resetData() {
     chrome.storage.local.set({
         enabled: DEFAULT_SETTINGS.enabled,
         [SERVICE_VISIBILITY_KEY]: createDefaultServiceVisibility(),
+        [PRELOAD_MATCH_IDENTITIES_KEY]: DEFAULT_SETTINGS[PRELOAD_MATCH_IDENTITIES_KEY],
         [AUTO_EXPAND_SINGLE_MATCH_KEY]: DEFAULT_SETTINGS[AUTO_EXPAND_SINGLE_MATCH_KEY],
         [EMPTY_MATCH_NAMES_KEY]: DEFAULT_SETTINGS[EMPTY_MATCH_NAMES_KEY],
         steamNotes: "{}"
     }, () => {
         notes = {};
         els.enabled.checked = DEFAULT_SETTINGS.enabled;
+        els.preloadActiveMatchIdentities.checked = DEFAULT_SETTINGS[PRELOAD_MATCH_IDENTITIES_KEY];
         els.autoExpandSingleActiveMatch.checked = DEFAULT_SETTINGS[AUTO_EXPAND_SINGLE_MATCH_KEY];
         els.showEmptyActiveMatchNames.checked = DEFAULT_SETTINGS[EMPTY_MATCH_NAMES_KEY];
         broadcastSetting("enabled", DEFAULT_SETTINGS.enabled);
         broadcastSetting(SERVICE_VISIBILITY_KEY, serviceVisibility);
+        broadcastSetting(PRELOAD_MATCH_IDENTITIES_KEY, DEFAULT_SETTINGS[PRELOAD_MATCH_IDENTITIES_KEY]);
         broadcastSetting(AUTO_EXPAND_SINGLE_MATCH_KEY, DEFAULT_SETTINGS[AUTO_EXPAND_SINGLE_MATCH_KEY]);
         broadcastSetting(EMPTY_MATCH_NAMES_KEY, DEFAULT_SETTINGS[EMPTY_MATCH_NAMES_KEY]);
         renderServiceSettings();
@@ -868,7 +882,7 @@ function isSuitableTab(url, name) {
             || url.startsWith("https://www.twitch.tv/");
     }
 
-    if (name === EMPTY_MATCH_NAMES_KEY || name === AUTO_EXPAND_SINGLE_MATCH_KEY) {
+    if (name === EMPTY_MATCH_NAMES_KEY || name === AUTO_EXPAND_SINGLE_MATCH_KEY || name === PRELOAD_MATCH_IDENTITIES_KEY) {
         return url.startsWith("https://statlocker.gg/");
     }
 

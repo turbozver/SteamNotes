@@ -1,6 +1,11 @@
 const SERVICE_VISIBILITY_KEY = "steamnotesServiceVisibility";
 const EMPTY_MATCH_NAMES_KEY = "steamnotesShowEmptyActiveMatchNames";
 const AUTO_EXPAND_SINGLE_MATCH_KEY = "steamnotesAutoExpandSingleActiveMatch";
+const PRELOAD_MATCH_IDENTITIES_KEY = "steamnotesPreloadActiveMatchIdentities";
+const STATLOCKER_PROFILE_LINK_SELECTOR = ".lm-player-name > a[href*='/profile/'], .lobby-live-list .lpr-name > a[href*='/profile/']";
+const STATLOCKER_COMPACT_NAME_SELECTOR = ".lobby-live-list .llc-tile-player-name";
+const statlockerPlayerIdentityCache = new Map();
+let statlockerPreloadInProgress = false;
 
 const STATIC_SERVICES = [
     {
@@ -90,7 +95,7 @@ chrome.runtime.onMessage.addListener((message) => {
         else if (name === SERVICE_VISIBILITY_KEY) {
             refreshSteamNotesPanels();
         }
-        else if ((name === EMPTY_MATCH_NAMES_KEY || name === AUTO_EXPAND_SINGLE_MATCH_KEY) && getCurrentPageKey() === "statlockerMatches") {
+        else if ((name === EMPTY_MATCH_NAMES_KEY || name === AUTO_EXPAND_SINGLE_MATCH_KEY || name === PRELOAD_MATCH_IDENTITIES_KEY) && getCurrentPageKey() === "statlockerMatches") {
             handleStatlockerMatchPlayers(true);
         }
     }
@@ -316,75 +321,175 @@ function handleStatlockerMatchPlayers(value) {
     }
     else {
         statlockerMatchObserver.disconnect();
-
-        chrome.storage.local.get("steamNotes", (data) => {
-            const saved = parseNotes(data.steamNotes);
-
-            document.querySelectorAll('.lm-player-name > a[href^="/profile/"]').forEach((a) => {
-                const match = a.getAttribute("href").match(/\/profile\/(\d+)/);
-                const id = match?.[1];
-
-                if (saved[id]) {
-                    a.textContent = a.parentElement.title;
-                    a.style.color = "#fff";
-                }
-            });
-        });
+        statlockerPlayerIdentityCache.clear();
+        document.querySelectorAll("[data-steamnotes-original-name]").forEach(restoreStatlockerPlayerName);
     }
 }
 
 function replacePlayerLinks() {
-    chrome.storage.local.get(["steamNotes", SERVICE_VISIBILITY_KEY, "steamnotesServices", EMPTY_MATCH_NAMES_KEY, AUTO_EXPAND_SINGLE_MATCH_KEY], (data) => {
+    chrome.storage.local.get(["steamNotes", SERVICE_VISIBILITY_KEY, "steamnotesServices", EMPTY_MATCH_NAMES_KEY, AUTO_EXPAND_SINGLE_MATCH_KEY, PRELOAD_MATCH_IDENTITIES_KEY], (data) => {
         const saved = parseNotes(data.steamNotes);
         const visibility = normalizeServiceVisibility(data[SERVICE_VISIBILITY_KEY], data.steamnotesServices);
         const showEmptyNames = data[EMPTY_MATCH_NAMES_KEY] !== false;
-        if (data[AUTO_EXPAND_SINGLE_MATCH_KEY] !== false) autoExpandSingleStatlockerMatch();
+        cacheExpandedStatlockerPlayers();
 
-        document.querySelectorAll('.lm-player-name > a[href^="/profile/"]').forEach((a) => {
-            const match = a.getAttribute("href").match(/\/profile\/(\d+)/);
+        document.querySelectorAll(STATLOCKER_PROFILE_LINK_SELECTOR).forEach((a) => {
+            const match = a.getAttribute("href")?.match(/\/profile\/(\d+)/);
             const id = match?.[1];
             if (!id) return;
 
-            if (!showEmptyNames && a.dataset.steamnotesEmptyName === "true") {
-                a.textContent = "";
-                a.style.color = "";
-                delete a.dataset.steamnotesEmptyName;
-                return;
-            }
-
             if (saved[id]) {
-                a.textContent = "";
-                delete a.dataset.steamnotesEmptyName;
-                a.appendChild(document.createTextNode(getNoteDisplayTitle(id, saved[id], a.parentElement.title)));
-
-                ["twitch"].forEach((serviceId) => {
-                    const service = STATIC_SERVICES.find((item) => item.id === serviceId);
-                    const href = buildPageServiceUrl(service, id, saved[id], visibility);
-                    if (!href) return;
-
-                    const icon = document.createElement("img");
-                    icon.src = getPageServiceIconUrl(service);
-                    icon.style.width = icon.style.height = "15px";
-                    icon.style.marginLeft = "5px";
-                    icon.addEventListener("pointerup", (event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        if (event.button === 0) window.location.href = href;
-                        else if (event.button === 1) window.open(href, "_blank", "noopener");
-                    });
-                    a.appendChild(icon);
-                });
-
-                a.style.color = saved[id].cheater ? "red" : saved[id].suspect ? "#d19042" : "#5fda72";
-            }
-            else if (a.textContent.trim() === "" || a.textContent.trim() === "็็็") {
-                if (!showEmptyNames) return;
-                a.textContent = "*empty*";
-                a.style.color = "gray";
-                a.dataset.steamnotesEmptyName = "true";
+                decorateStatlockerProfileLink(a, id, saved[id], visibility);
+            } else if (isEmptyStatlockerPlayerName(getOriginalStatlockerPlayerName(a))) {
+                decorateEmptyStatlockerPlayerName(a, showEmptyNames);
+            } else {
+                restoreStatlockerPlayerName(a);
             }
         });
+
+        document.querySelectorAll(STATLOCKER_COMPACT_NAME_SELECTOR).forEach((name) => {
+            const id = getCachedStatlockerPlayerId(name);
+            const originalName = getOriginalStatlockerPlayerName(name);
+            if (id && saved[id]) {
+                decorateCompactStatlockerPlayerName(name, id, saved[id]);
+            }
+            else if (isEmptyStatlockerPlayerName(originalName)) {
+                decorateEmptyStatlockerPlayerName(name, showEmptyNames);
+            }
+            else restoreStatlockerPlayerName(name);
+        });
+
+        if (data[PRELOAD_MATCH_IDENTITIES_KEY] === true) preloadStatlockerMatchIdentities();
+        else if (data[AUTO_EXPAND_SINGLE_MATCH_KEY] !== false) autoExpandSingleStatlockerMatch();
     });
+}
+
+function decorateStatlockerProfileLink(element, id, note, visibility) {
+    const title = getNoteDisplayTitle(id, note, element.parentElement?.title || getOriginalStatlockerPlayerName(element));
+    const color = getStatlockerPlayerColor(note);
+    const service = STATIC_SERVICES.find((item) => item.id === "twitch");
+    const href = buildPageServiceUrl(service, id, note, visibility);
+    const signature = JSON.stringify([id, title, color, href]);
+    if (element.dataset.steamnotesSignature === signature) return;
+
+    rememberStatlockerPlayerName(element);
+    element.replaceChildren(document.createTextNode(title));
+
+    if (href) {
+        const icon = document.createElement("img");
+        icon.src = getPageServiceIconUrl(service);
+        icon.style.width = icon.style.height = "15px";
+        icon.style.marginLeft = "5px";
+        icon.addEventListener("pointerup", (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (event.button === 0) window.location.href = href;
+            else if (event.button === 1) window.open(href, "_blank", "noopener");
+        });
+        element.appendChild(icon);
+    }
+
+    element.style.color = color;
+    element.dataset.steamnotesSignature = signature;
+    delete element.dataset.steamnotesEmptyName;
+}
+
+function decorateCompactStatlockerPlayerName(element, id, note) {
+    const title = getNoteDisplayTitle(id, note, getOriginalStatlockerPlayerName(element));
+    const color = getStatlockerPlayerColor(note);
+    const signature = JSON.stringify([id, title, color]);
+    if (element.dataset.steamnotesSignature === signature) return;
+
+    rememberStatlockerPlayerName(element);
+    element.textContent = title;
+    element.style.color = color;
+    element.dataset.steamnotesSignature = signature;
+    delete element.dataset.steamnotesEmptyName;
+}
+
+function decorateEmptyStatlockerPlayerName(element, showEmptyNames) {
+    if (!showEmptyNames) {
+        restoreStatlockerPlayerName(element);
+        return;
+    }
+
+    if (element.dataset.steamnotesEmptyName === "true") return;
+    rememberStatlockerPlayerName(element);
+    element.textContent = "*empty*";
+    element.style.color = "gray";
+    element.dataset.steamnotesEmptyName = "true";
+    delete element.dataset.steamnotesSignature;
+}
+
+function cacheExpandedStatlockerPlayers() {
+    document.querySelectorAll(".lobby-live-card.expanded").forEach((card) => {
+        const matchId = getStatlockerMatchId(card);
+        if (!matchId) return;
+
+        card.dataset.steamnotesMatchId = matchId;
+        card.querySelectorAll(".lpr-name > a[href*='/profile/']").forEach((link) => {
+            const id = link.getAttribute("href")?.match(/\/profile\/(\d+)/)?.[1];
+            const hero = getStatlockerHeroKey(link.closest(".lobby-player-row"));
+            if (id && hero) statlockerPlayerIdentityCache.set(`${matchId}:${hero}`, id);
+        });
+    });
+}
+
+function getCachedStatlockerPlayerId(element) {
+    const card = element.closest(".lobby-live-card");
+    const matchId = getStatlockerMatchId(card);
+    const hero = getStatlockerHeroKey(element.closest(".llc-tile-player"));
+    return matchId && hero ? statlockerPlayerIdentityCache.get(`${matchId}:${hero}`) || null : null;
+}
+
+function getStatlockerMatchId(card) {
+    if (!card) return "";
+    if (card.dataset.steamnotesMatchId) return card.dataset.steamnotesMatchId;
+    return card.querySelector(".chead .meta > b, .meta > b")?.textContent.trim().match(/^\d+$/)?.[0] || "";
+}
+
+function getStatlockerHeroKey(container) {
+    if (!container) return "";
+    const image = [...container.querySelectorAll("img")].find((item) => {
+        const source = [item.currentSrc, item.src, item.dataset.src, item.dataset.original, item.dataset.savepageSrc].filter(Boolean).join(" ");
+        return /\/heroes\//i.test(source) || /\sicon$/i.test(item.alt || "");
+    });
+    if (!image) return "";
+
+    const source = [image.currentSrc, image.src, image.dataset.src, image.dataset.original, image.dataset.savepageSrc].filter(Boolean).join(" ");
+    const asset = source.match(/\/heroes\/([^/?#]+?)(?:_(?:mm|sm|lg))?\.png/i)?.[1];
+    return String(asset || image.alt || "").replace(/\s+icon$/i, "").trim().toLocaleLowerCase();
+}
+
+function isEmptyStatlockerPlayerName(value) {
+    const name = String(value || "").trim();
+    return !name || name === "็็็";
+}
+
+function getStatlockerPlayerColor(note) {
+    return note.cheater ? "red" : note.suspect ? "#d19042" : "#5fda72";
+}
+
+function getOriginalStatlockerPlayerName(element) {
+    return Object.hasOwn(element.dataset, "steamnotesOriginalName")
+        ? element.dataset.steamnotesOriginalName
+        : element.textContent;
+}
+
+function rememberStatlockerPlayerName(element) {
+    if (Object.hasOwn(element.dataset, "steamnotesOriginalName")) return;
+    element.dataset.steamnotesOriginalName = element.textContent;
+    element.dataset.steamnotesOriginalColor = element.style.color;
+}
+
+function restoreStatlockerPlayerName(element) {
+    if (!Object.hasOwn(element.dataset, "steamnotesOriginalName")) return;
+    element.textContent = element.dataset.steamnotesOriginalName;
+    element.style.color = element.dataset.steamnotesOriginalColor || "";
+    delete element.dataset.steamnotesOriginalName;
+    delete element.dataset.steamnotesOriginalColor;
+    delete element.dataset.steamnotesSignature;
+    delete element.dataset.steamnotesEmptyName;
 }
 
 function autoExpandSingleStatlockerMatch() {
@@ -401,6 +506,55 @@ function autoExpandSingleStatlockerMatch() {
 
         card.dataset.steamnotesAutoExpanded = "true";
         button.click();
+    });
+}
+
+async function preloadStatlockerMatchIdentities() {
+    if (statlockerPreloadInProgress) return;
+
+    const cards = [...document.querySelectorAll("div.lobby-live-list div.lobby-live-card")]
+        .filter((card) => !card.classList.contains("expanded") && card.dataset.steamnotesIdentitiesPreloaded !== "true");
+    if (!cards.length) return;
+
+    statlockerPreloadInProgress = true;
+    try {
+        for (const card of cards) {
+            if (!card.isConnected) continue;
+
+            const openButton = card.querySelector("button.llc-collapsed[aria-expanded='false'], button.llc-collapsed");
+            if (!openButton) {
+                card.dataset.steamnotesIdentitiesPreloaded = "true";
+                continue;
+            }
+
+            openButton.click();
+            await waitForStatlockerCondition(() => {
+                cacheExpandedStatlockerPlayers();
+                return !!getStatlockerMatchId(card) && card.querySelectorAll(".lpr-name > a[href*='/profile/']").length > 0;
+            });
+
+            card.dataset.steamnotesIdentitiesPreloaded = "true";
+            card.querySelector("button.chead[aria-expanded='true'], button.llc-collapsed[aria-expanded='true']")?.click();
+            await waitForStatlockerCondition(() => !card.classList.contains("expanded"), 600);
+        }
+    }
+    finally {
+        statlockerPreloadInProgress = false;
+        replacePlayerLinks();
+    }
+}
+
+function waitForStatlockerCondition(check, timeout = 1400) {
+    return new Promise((resolve) => {
+        const deadline = Date.now() + timeout;
+        const poll = () => {
+            if (check() || Date.now() >= deadline) {
+                resolve();
+                return;
+            }
+            setTimeout(poll, 40);
+        };
+        poll();
     });
 }
 
