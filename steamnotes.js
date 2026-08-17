@@ -1,5 +1,6 @@
 const SERVICE_VISIBILITY_KEY = "steamnotesServiceVisibility";
 const EMPTY_MATCH_NAMES_KEY = "steamnotesShowEmptyActiveMatchNames";
+const AUTO_EXPAND_SINGLE_MATCH_KEY = "steamnotesAutoExpandSingleActiveMatch";
 
 const STATIC_SERVICES = [
     {
@@ -89,7 +90,7 @@ chrome.runtime.onMessage.addListener((message) => {
         else if (name === SERVICE_VISIBILITY_KEY) {
             refreshSteamNotesPanels();
         }
-        else if (name === EMPTY_MATCH_NAMES_KEY && getCurrentPageKey() === "statlockerMatches") {
+        else if ((name === EMPTY_MATCH_NAMES_KEY || name === AUTO_EXPAND_SINGLE_MATCH_KEY) && getCurrentPageKey() === "statlockerMatches") {
             handleStatlockerMatchPlayers(true);
         }
     }
@@ -333,10 +334,11 @@ function handleStatlockerMatchPlayers(value) {
 }
 
 function replacePlayerLinks() {
-    chrome.storage.local.get(["steamNotes", SERVICE_VISIBILITY_KEY, "steamnotesServices", EMPTY_MATCH_NAMES_KEY], (data) => {
+    chrome.storage.local.get(["steamNotes", SERVICE_VISIBILITY_KEY, "steamnotesServices", EMPTY_MATCH_NAMES_KEY, AUTO_EXPAND_SINGLE_MATCH_KEY], (data) => {
         const saved = parseNotes(data.steamNotes);
         const visibility = normalizeServiceVisibility(data[SERVICE_VISIBILITY_KEY], data.steamnotesServices);
         const showEmptyNames = data[EMPTY_MATCH_NAMES_KEY] !== false;
+        if (data[AUTO_EXPAND_SINGLE_MATCH_KEY] !== false) autoExpandSingleStatlockerMatch();
 
         document.querySelectorAll('.lm-player-name > a[href^="/profile/"]').forEach((a) => {
             const match = a.getAttribute("href").match(/\/profile\/(\d+)/);
@@ -385,6 +387,23 @@ function replacePlayerLinks() {
     });
 }
 
+function autoExpandSingleStatlockerMatch() {
+    document.querySelectorAll("div.lobby-live-list").forEach((list) => {
+        const cards = [...list.querySelectorAll("div.lobby-live-card")]
+            .filter((card) => card.closest("div.lobby-live-list") === list);
+        if (cards.length !== 1) return;
+
+        const card = cards[0];
+        if (card.dataset.steamnotesAutoExpanded === "true") return;
+
+        const button = card.querySelector("button.llc-collapsed");
+        if (!button) return;
+
+        card.dataset.steamnotesAutoExpanded = "true";
+        button.click();
+    });
+}
+
 const statlockerMatchObserver = new MutationObserver(() => {
     chrome.storage.local.get(["enabled"], (data) => {
         if (data.enabled !== false) handleStatlockerMatchPlayers(true);
@@ -422,8 +441,14 @@ function handleAddTwitch(value) {
             const saved = parseNotes(data.steamNotes);
             const visibility = normalizeServiceVisibility(data[SERVICE_VISIBILITY_KEY], data.steamnotesServices);
             const renderedIds = new Set();
+            const matchingNotes = Object.entries(saved)
+                .filter(([, note]) => {
+                    const savedTwitch = getPageCustomValue(note, "twitch");
+                    return savedTwitch && twitchUsername === savedTwitch.toLowerCase() && !note.hideOnTwitch;
+                })
+                .sort(compareTwitchNotes);
 
-            Object.entries(saved).forEach(([id, note]) => {
+            matchingNotes.forEach(([id, note]) => {
                 const savedTwitch = getPageCustomValue(note, "twitch");
                 if (savedTwitch && twitchUsername == savedTwitch.toLowerCase() && !note.hideOnTwitch && !renderedIds.has(id)) {
                     renderedIds.add(id);
@@ -451,6 +476,16 @@ function handleAddTwitch(value) {
     else {
         document.getElementById("turbo-notes-twitch-container")?.remove();
     }
+}
+
+function compareTwitchNotes([, a], [, b]) {
+    if (!!a.pinned !== !!b.pinned) return Number(!!b.pinned) - Number(!!a.pinned);
+
+    const aOrder = Number.isFinite(Number(a.order)) ? Number(a.order) : Number.MAX_SAFE_INTEGER;
+    const bOrder = Number.isFinite(Number(b.order)) ? Number(b.order) : Number.MAX_SAFE_INTEGER;
+    if (aOrder !== bOrder) return aOrder - bOrder;
+
+    return (b.createdAt || 0) - (a.createdAt || 0);
 }
 
 function getCurrentPageKey() {

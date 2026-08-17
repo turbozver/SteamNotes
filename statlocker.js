@@ -30,13 +30,13 @@ function handleStatlockerMatchesFilters() {
 }
 
 function addStatlockerMatchesFilter(searchby, value) {
-    const filtersContainer = document.querySelector('.amp-search-control-group');
+    const filtersContainer = document.querySelector('.amp-rail-panel');
     if (!filtersContainer) {
         handleStatlockerMatchesFilters();
         return;
     }
     
-    filtersContainer.querySelector("div.sort-dropdown > button").click();
+    filtersContainer.querySelectorAll("div.sort-dropdown > button")[2].click();
 
     setTimeout(() => {
         const searchbyOptions = document.querySelectorAll("div.sort-dropdown-menu > div");
@@ -48,7 +48,7 @@ function addStatlockerMatchesFilter(searchby, value) {
                 inputField.value = value;
                 inputField.dispatchEvent(new Event('input', { bubbles: true }));
 
-                filtersContainer.querySelector(":scope > button").click();
+                filtersContainer.querySelector("div.amp-rail-actions > button").click();
             }
             
             window.scrollBy({top: 200, behavior: "smooth"});
