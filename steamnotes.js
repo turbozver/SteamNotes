@@ -351,7 +351,7 @@ function replacePlayerLinks() {
             const id = getCachedStatlockerPlayerId(name);
             const originalName = getOriginalStatlockerPlayerName(name);
             if (id && saved[id]) {
-                decorateCompactStatlockerPlayerName(name, id, saved[id]);
+                decorateCompactStatlockerPlayerName(name, id, saved[id], visibility);
             }
             else if (isEmptyStatlockerPlayerName(originalName)) {
                 decorateEmptyStatlockerPlayerName(name, showEmptyNames);
@@ -359,7 +359,12 @@ function replacePlayerLinks() {
             else restoreStatlockerPlayerName(name);
         });
 
-        if (data[PRELOAD_MATCH_IDENTITIES_KEY] === true) preloadStatlockerMatchIdentities();
+        if (data[PRELOAD_MATCH_IDENTITIES_KEY] === true) {
+            preloadStatlockerMatchIdentities();
+            if (!statlockerPreloadInProgress && !getPendingStatlockerPreloadCards().length && data[AUTO_EXPAND_SINGLE_MATCH_KEY] !== false) {
+                autoExpandSingleStatlockerMatch();
+            }
+        }
         else if (data[AUTO_EXPAND_SINGLE_MATCH_KEY] !== false) autoExpandSingleStatlockerMatch();
     });
 }
@@ -375,36 +380,51 @@ function decorateStatlockerProfileLink(element, id, note, visibility) {
     rememberStatlockerPlayerName(element);
     element.replaceChildren(document.createTextNode(title));
 
-    if (href) {
-        const icon = document.createElement("img");
-        icon.src = getPageServiceIconUrl(service);
-        icon.style.width = icon.style.height = "15px";
-        icon.style.marginLeft = "5px";
-        icon.addEventListener("pointerup", (event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            if (event.button === 0) window.location.href = href;
-            else if (event.button === 1) window.open(href, "_blank", "noopener");
-        });
-        element.appendChild(icon);
-    }
+    if (href) addStatlockerTwitchLink(element, href, "15px");
 
     element.style.color = color;
     element.dataset.steamnotesSignature = signature;
     delete element.dataset.steamnotesEmptyName;
 }
 
-function decorateCompactStatlockerPlayerName(element, id, note) {
+function decorateCompactStatlockerPlayerName(element, id, note, visibility) {
     const title = getNoteDisplayTitle(id, note, getOriginalStatlockerPlayerName(element));
     const color = getStatlockerPlayerColor(note);
-    const signature = JSON.stringify([id, title, color]);
+    const service = STATIC_SERVICES.find((item) => item.id === "twitch");
+    const href = buildPageServiceUrl(service, id, note, visibility);
+    const signature = JSON.stringify([id, title, color, href]);
     if (element.dataset.steamnotesSignature === signature) return;
 
     rememberStatlockerPlayerName(element);
-    element.textContent = title;
+    element.replaceChildren(document.createTextNode(title));
+    if (href) addStatlockerTwitchLink(element, href, "13px");
     element.style.color = color;
     element.dataset.steamnotesSignature = signature;
     delete element.dataset.steamnotesEmptyName;
+}
+
+function addStatlockerTwitchLink(element, href, size) {
+    const icon = document.createElement("img");
+    icon.src = getPageServiceIconUrl(STATIC_SERVICES.find((item) => item.id === "twitch"));
+    icon.style.width = icon.style.height = size;
+    icon.style.marginLeft = "5px";
+    icon.style.verticalAlign = "-2px";
+    icon.title = "Twitch";
+    icon.addEventListener("mousedown", (event) => {
+        if (event.button === 1) event.preventDefault();
+    });
+    icon.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        window.location.href = href;
+    });
+    icon.addEventListener("auxclick", (event) => {
+        if (event.button !== 1) return;
+        event.preventDefault();
+        event.stopPropagation();
+        window.open(href, "_blank", "noopener");
+    });
+    element.appendChild(icon);
 }
 
 function decorateEmptyStatlockerPlayerName(element, showEmptyNames) {
@@ -512,8 +532,7 @@ function autoExpandSingleStatlockerMatch() {
 async function preloadStatlockerMatchIdentities() {
     if (statlockerPreloadInProgress) return;
 
-    const cards = [...document.querySelectorAll("div.lobby-live-list div.lobby-live-card")]
-        .filter((card) => !card.classList.contains("expanded") && card.dataset.steamnotesIdentitiesPreloaded !== "true");
+    const cards = getPendingStatlockerPreloadCards();
     if (!cards.length) return;
 
     statlockerPreloadInProgress = true;
@@ -542,6 +561,11 @@ async function preloadStatlockerMatchIdentities() {
         statlockerPreloadInProgress = false;
         replacePlayerLinks();
     }
+}
+
+function getPendingStatlockerPreloadCards() {
+    return [...document.querySelectorAll("div.lobby-live-list div.lobby-live-card")]
+        .filter((card) => !card.classList.contains("expanded") && card.dataset.steamnotesIdentitiesPreloaded !== "true");
 }
 
 function waitForStatlockerCondition(check, timeout = 1400) {
