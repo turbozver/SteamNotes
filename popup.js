@@ -117,6 +117,8 @@ let renderRequest = 0;
 let draggedNoteId = null;
 let dragMoved = false;
 let dropMarker = null;
+let dropPlacement = null;
+let renderedTabs = [];
 
 init();
 
@@ -140,6 +142,8 @@ function init() {
     els.exportBtn.addEventListener("click", exportData);
     els.importFile.addEventListener("change", importData);
     els.resetBtn.addEventListener("click", resetData);
+    els.notesList.addEventListener("dragover", handleNotesListDragOver);
+    els.notesList.addEventListener("drop", handleNotesListDrop);
 
     [els.editNickname, els.editInfo, els.editCheater, els.editSuspect, els.editHideOnTwitch]
         .forEach((input) => input.addEventListener("input", saveEdit));
@@ -197,9 +201,10 @@ function saveSetting(key, value) {
     });
 }
 
-function renderNotes() {
+function renderNotes(options = {}) {
     const requestId = ++renderRequest;
     const query = els.search.value.trim().toLowerCase();
+    const scrollTop = options.preserveScroll ? els.notesList.scrollTop : 0;
     els.notesList.textContent = "";
 
     const entries = Object.entries(notes)
@@ -208,10 +213,11 @@ function renderNotes() {
 
     chrome.tabs.query({}, (tabs) => {
         if (requestId !== renderRequest) return;
+        renderedTabs = tabs || [];
 
         entries.sort((a, b) => {
-            const aOpen = isStreamOpened(tabs, getCustomValue(a[1], "twitch"));
-            const bOpen = isStreamOpened(tabs, getCustomValue(b[1], "twitch"));
+            const aOpen = isStreamOpened(renderedTabs, getCustomValue(a[1], "twitch"));
+            const bOpen = isStreamOpened(renderedTabs, getCustomValue(b[1], "twitch"));
             if (aOpen !== bOpen) return bOpen - aOpen;
             if (!!a[1].pinned !== !!b[1].pinned) return Number(!!b[1].pinned) - Number(!!a[1].pinned);
             const aOrder = Number.isFinite(Number(a[1].order)) ? Number(a[1].order) : Number.MAX_SAFE_INTEGER;
@@ -225,14 +231,23 @@ function renderNotes() {
             empty.className = "empty-state";
             empty.textContent = "No notes";
             els.notesList.appendChild(empty);
+            restoreNotesScroll(options, scrollTop);
             return;
         }
 
         entries.forEach(([id, note]) => {
-            const isLive = isStreamOpened(tabs, getCustomValue(note, "twitch"));
+            const isLive = isStreamOpened(renderedTabs, getCustomValue(note, "twitch"));
             const row = createNoteRow(id, note, isLive);
             els.notesList.appendChild(row);
         });
+        restoreNotesScroll(options, scrollTop);
+    });
+}
+
+function restoreNotesScroll(options, scrollTop) {
+    if (!options.preserveScroll) return;
+    requestAnimationFrame(() => {
+        els.notesList.scrollTop = scrollTop;
     });
 }
 
@@ -290,6 +305,7 @@ function createNoteRow(id, note, isLive = false) {
         }
         draggedNoteId = id;
         dragMoved = false;
+        dropPlacement = null;
         row.classList.add("dragging");
         event.dataTransfer.effectAllowed = "move";
         event.dataTransfer.setData("text/plain", id);
@@ -300,30 +316,58 @@ function createNoteRow(id, note, isLive = false) {
         removeDropMarker();
         row.classList.remove("dragging");
     });
-    row.addEventListener("dragover", (event) => {
-        if (!draggedNoteId || draggedNoteId === id || isLive) return;
-        const dragged = els.notesList.querySelector(`[data-note-id="${CSS.escape(draggedNoteId)}"]`);
-        if (!dragged || dragged.classList.contains("is-locked")) return;
-        if (dragged.dataset.sortGroup !== row.dataset.sortGroup) {
-            removeDropMarker();
-            return;
-        }
-        event.preventDefault();
-        placeDropMarker(row, isAfterRowMiddle(event, row));
-        dragMoved = true;
-    });
-    row.addEventListener("drop", (event) => {
-        if (!draggedNoteId || draggedNoteId === id || isLive) return;
-        event.preventDefault();
-        dropDraggedNote();
-    });
 
     return row;
 }
 
-function isAfterRowMiddle(event, row) {
-    const rect = row.getBoundingClientRect();
-    return event.clientY > rect.top + rect.height / 2;
+function handleNotesListDragOver(event) {
+    const placement = getNoteDropPlacement(event.clientY);
+    if (!placement) {
+        removeDropMarker();
+        return;
+    }
+    event.preventDefault();
+    placeDropMarker(placement.row, placement.after);
+    dragMoved = true;
+}
+
+function handleNotesListDrop(event) {
+    if (!draggedNoteId) return;
+    const placement = dropPlacement || getNoteDropPlacement(event.clientY);
+    if (!placement) return;
+    event.preventDefault();
+    event.stopPropagation();
+    dropDraggedNote(placement);
+}
+
+function getNoteDropPlacement(clientY) {
+    if (!draggedNoteId) return null;
+    const dragged = els.notesList.querySelector(`[data-note-id="${CSS.escape(draggedNoteId)}"]`);
+    if (!dragged || dragged.classList.contains("is-locked")) return null;
+    const rows = Array.from(els.notesList.querySelectorAll(".note-row"))
+        .filter((row) => row.dataset.noteId !== draggedNoteId)
+        .filter((row) => !row.classList.contains("is-locked"))
+        .filter((row) => row.dataset.sortGroup === dragged.dataset.sortGroup);
+    if (!rows.length) return null;
+
+    let closest = null;
+    let closestDistance = Infinity;
+    rows.forEach((row) => {
+        const rect = row.getBoundingClientRect();
+        const distance = Math.abs(clientY - (rect.top + rect.height / 2));
+        if (distance < closestDistance) {
+            closestDistance = distance;
+            closest = row;
+        }
+    });
+
+    if (!closest) return null;
+    const rect = closest.getBoundingClientRect();
+    return {
+        row: closest,
+        targetId: closest.dataset.noteId,
+        after: clientY > rect.top + rect.height / 2
+    };
 }
 
 function placeDropMarker(row, after) {
@@ -336,9 +380,15 @@ function placeDropMarker(row, after) {
         });
         dropMarker.addEventListener("drop", (event) => {
             event.preventDefault();
+            event.stopPropagation();
             dropDraggedNote();
         });
     }
+    dropPlacement = {
+        row,
+        targetId: row.dataset.noteId,
+        after
+    };
     dropMarker.dataset.targetId = row.dataset.noteId;
     dropMarker.dataset.after = String(after);
     if (after) {
@@ -351,16 +401,17 @@ function placeDropMarker(row, after) {
 
 function removeDropMarker() {
     dropMarker?.remove();
+    dropPlacement = null;
 }
 
-function dropDraggedNote() {
-    if (!draggedNoteId || !dropMarker?.isConnected) return;
+function dropDraggedNote(placement = dropPlacement) {
+    if (!draggedNoteId || !placement) return;
     const sourceId = draggedNoteId;
-    const targetId = dropMarker.dataset.targetId;
-    const after = dropMarker.dataset.after === "true";
+    const targetId = placement.targetId;
+    const after = !!placement.after;
     const dragged = els.notesList.querySelector(`[data-note-id="${CSS.escape(sourceId)}"]`);
     if (!dragged || dragged.classList.contains("is-locked")) return;
-    dropMarker.replaceWith(dragged);
+    if (dropMarker?.isConnected) dropMarker.replaceWith(dragged);
     removeDropMarker();
     reorderNoteInFullList(sourceId, targetId, after);
 }
@@ -388,26 +439,24 @@ function reorderNoteInFullList(sourceId, targetId, after) {
     const target = notes[targetId];
     if (!source || !target || !!source.pinned !== !!target.pinned) return;
 
-    chrome.tabs.query({}, (tabs) => {
-        const group = source.pinned ? "pinned" : "normal";
-        const orderedIds = Object.entries(notes)
-            .filter(([id, note]) => id !== sourceId && !isStreamOpened(tabs, getCustomValue(note, "twitch")))
-            .filter(([, note]) => (note.pinned ? "pinned" : "normal") === group)
-            .sort(compareNotesByOrder)
-            .map(([id]) => id);
-        const targetIndex = orderedIds.indexOf(targetId);
-        if (targetIndex < 0) return;
+    const group = source.pinned ? "pinned" : "normal";
+    const orderedIds = Object.entries(notes)
+        .filter(([id, note]) => id !== sourceId && !isStreamOpened(renderedTabs, getCustomValue(note, "twitch")))
+        .filter(([, note]) => (note.pinned ? "pinned" : "normal") === group)
+        .sort(compareNotesByOrder)
+        .map(([id]) => id);
+    const targetIndex = orderedIds.indexOf(targetId);
+    if (targetIndex < 0) return;
 
-        orderedIds.splice(targetIndex + (after ? 1 : 0), 0, sourceId);
-        orderedIds.forEach((id, index) => {
-            notes[id] = {
-                ...notes[id],
-                order: index,
-                createdAt: notes[id].createdAt || Date.now()
-            };
-        });
-        chrome.storage.local.set({ steamNotes: JSON.stringify(notes) }, renderNotes);
+    orderedIds.splice(targetIndex + (after ? 1 : 0), 0, sourceId);
+    orderedIds.forEach((id, index) => {
+        notes[id] = {
+            ...notes[id],
+            order: index,
+            createdAt: notes[id].createdAt || Date.now()
+        };
     });
+    chrome.storage.local.set({ steamNotes: JSON.stringify(notes) }, () => renderNotes({ preserveScroll: true }));
 }
 
 function compareNotesByOrder([, a], [, b]) {
