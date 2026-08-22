@@ -1,7 +1,7 @@
 {
     "name": "Steam Notes",
     "description": "Local notes for Steam, Tracklock, Statlocker, Faceit, and Twitch profiles.",
-    "version": "1.5.2",
+    "version": "1.5.3",
     "manifest_version": 3,
     "permissions": ["tabs", "storage", "webNavigation"],
     "icons": {

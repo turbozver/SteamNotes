@@ -37,7 +37,7 @@ const STATIC_SERVICES = [
         label: "Statlocker Matches",
         mode: "steamid3",
         icon: "statlocker.png",
-        template: "https://statlocker.gg/active-matches/?searchby=accountid&value={id}"
+        template: "https://statlocker.gg/active-matches/?searchby=player&value={id}"
     },
     {
         id: "deadlockApi",
